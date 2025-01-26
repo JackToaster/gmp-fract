@@ -122,7 +122,7 @@ uint32_t arb_prec_mandelbrot(double x, double y, ArbPrecMandelbrotCFG *cfg) {
         }
         ++iter;
     }
-    return INT32_MAX;
+    return UINT32_MAX;
 }
 
 // for perturbation theory version
@@ -173,7 +173,8 @@ RefIter build_ref_iter(ArbPrecFrame *frame, mp_bitcnt_t precision_bits, uint32_t
    re_pts[0] = 0.0;
    im_pts[0] = 0.0;
 
-    for(uint32_t i = 1; i < iterations; ++i){
+    int i = 1;
+    while(i < iterations) {
         // im = 2 * re * im + im_c;
         mpf_mul(im, re, im);
         mpf_mul_2exp(im, im, 1);
@@ -192,17 +193,73 @@ RefIter build_ref_iter(ArbPrecFrame *frame, mp_bitcnt_t precision_bits, uint32_t
         // write re/im to array
         re_pts[i] = mpf_get_d(re);
         im_pts[i] = mpf_get_d(im);
+
+        ++i;
+
+        if(mpf_get_d(re2) + mpf_get_d(im2) > 40.0) {
+            return (RefIter) {iter, re_pts, im_pts};
+        }
     }
 
-    return (RefIter) {iterations, re, im};
+    return (RefIter) {iterations, re_pts, im_pts};
+}
+
+void drop_ref_iter(RefIter *ref) {
+    free(ref->im);
+    free(ref->re);
 }
 
 typedef struct PerturbMandelbrotCFG {
     uint32_t iterations;
-    RefIter reference;
+    RefIter *reference;
+    ArbPrecFrame *frame;
 } PerturbMandelbrotCFG;
 
+uint32_t perturb_mandelbrot(double x, double y, PerturbMandelbrotCFG *cfg) {
+    double reDz = 0.0;
+    double imDz = 0.0;
+    double scale = 1.0 / mpf_get_d(cfg->frame->zoom);
+    double reDc = x * scale;
+    double imDc = y * scale;
 
+    uint32_t iteration = 0;
+    uint32_t ref_iteration = 0;
+
+    // TODO SIMDify
+    while(iteration < cfg->iterations) {
+        double reRef = cfg->reference->re[ref_iteration];
+        double imRef = cfg->reference->im[ref_iteration];
+
+        double temp_reDz = 2 * (reDz * reRef - imDz * imRef) + reDz * reDz - imDz * imDz + reDc;
+        double temp_imDz = 2 * (reDz * imRef + imDz * reRef + reDz * imDz) + imDc;
+
+        reDz = temp_reDz;
+        imDz = temp_imDz;
+
+        ref_iteration++;
+
+        double re_z = reRef + reDz;
+        double im_z = imRef + imDz;
+
+        double abs_z2 = re_z * re_z + im_z * im_z;
+        if(abs_z2 > 100.0) {
+            return iteration;
+        }
+
+        double abs_dz2 = reDz * reDz + imDz * imDz;
+
+        // apparently this is supposed to fix glitches, but it seems to just create them.
+        // if(abs_z2 < abs_dz2 || ref_iteration >= cfg->reference->iterations) {
+        //     // dz = z
+        //     reDz = re_z; imDz = im_z;
+        //     ref_iteration = 0;
+        // }
+
+        iteration++;
+    }
+
+    return UINT32_MAX;
+}
 /*
 From FractalForums
 complex Reference[]; // Reference orbit (MUST START WITH ZERO)
@@ -219,6 +276,11 @@ while (Iteration < MaxIteration) {
 
     dz = 2 * dz * Reference[RefIteration] + dz * dz + dc;
 
+    ReDz = 2 * (ReDz * ReRef - ImDz * ImRef) + ReDz * ReDz - ImDz * ImDz + ReDc;
+    ImDz = 2 * (ReDz * ImRef + ImDz * ReRef) + 2 * ReDz * ImDz + ImDc;
+
+    x = 2*(x*x0-y*y0) + x2-y2 + dx0
+    y = 2*(x*y0+y*x0) + 2*x*y + dy0
     RefIteration++;
 
     

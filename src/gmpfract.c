@@ -16,7 +16,7 @@ const Clay_Color COLOR_ORANGE = (Clay_Color) {225, 138, 50, 255};
 Texture2D fractal_tex;
 Image fractal_image;
 Clay_Dimensions prev_screen_dims = {0.0, 0.0};
-float fractal_pixel_scale = 0.25;
+float fractal_pixel_scale = 1.0;
 
 void resize_fractal_image(uint32_t width, uint32_t height) {
     if(IsImageValid(fractal_image)) {
@@ -34,24 +34,51 @@ void makeTexture() {
 }
 
 void redraw_fractal(uint32_t width, uint32_t height) {
-    uint32_t prec = 256; // bits
     
-    ArbPrecMandelbrotCFG cfg = {
-        .iterations=10000,
-        .precision_bits = prec
+    
+    resize_fractal_image(width, height);
+
+    // uint32_t prec = 256; // bits
+    // ArbPrecMandelbrotCFG cfg = {
+    //     .iterations=2000,
+    //     .precision_bits = prec
+    // };
+    // mpf_set_default_prec(prec);
+    // mpf_init_set_str(cfg.c_re, "-1479946223325078880202580653442e-30", 10);
+    // mpf_init_set_str(cfg.c_im,  "0000901397329020353980197791866e-30", 10);
+    // mpf_init_set_str(cfg.zoom, "1e20", 10);
+    // DrawFractal(&fractal_image, (Fractal*) &arb_prec_mandelbrot, (void*) &cfg);
+
+    uint32_t prec = 1024; // bits
+    uint32_t ref_iterations = 40000;
+    ArbPrecFrame frame;
+    mpf_init_set_str(frame.c_re, "-1479946223325078880202580653442e-30", 10);
+    mpf_init_set_str(frame.c_im,  "0000901397329020353980197791866e-30", 10);
+    mpf_init_set_str(frame.zoom, "1e20", 10);
+
+    printf("building reference iteration...\n");
+    double currentTime = GetTime();
+
+    RefIter ref = build_ref_iter(&frame, prec, ref_iterations);
+
+    printf("ref iter time: %f ms\n", (GetTime() - currentTime) * 1000);
+
+
+
+    printf("rendering...\n");
+    currentTime = GetTime();
+    PerturbMandelbrotCFG cfg = {
+        .iterations = 10000,
+        .frame = &frame,
+        .reference = &ref
     };
 
-    mpf_set_default_prec(prec);
-    mpf_init_set_str(cfg.c_re, "-1479946223325078880202580653442e-30", 10);
-    mpf_init_set_str(cfg.c_im,  "0000901397329020353980197791866e-30", 10);
-    mpf_init_set_str(cfg.zoom, "1e30", 10);
-    // mpf_init_set_str(cfg.c_re, "0e0", 10);
-    // mpf_init_set_str(cfg.c_im,  "0e0", 10);
-    // mpf_init_set_str(cfg.zoom, "1e1", 10);
+    DrawFractal(&fractal_image, (Fractal*) &perturb_mandelbrot, &cfg);
 
-
-    resize_fractal_image(width, height);
-    DrawFractal(&fractal_image, (Fractal*) &arb_prec_mandelbrot, (void*) &cfg);
+    printf("render time: %f ms\n", (GetTime() - currentTime) * 1000);
+    
+    drop_ref_iter(&ref);
+    
     makeTexture();
 }
 
@@ -150,7 +177,7 @@ void UpdateDrawFrame(void)
     }
     DrawTexturePro(fractal_tex, (Rectangle) { 0.0, 0.0, fractal_tex.width, fractal_tex.height}, (Rectangle) { 0.0, 0.0, screen_dims.width, screen_dims.height}, (Vector2) { 0.0, 0.0 }, 0.0, WHITE);
     // draw UI on top
-    Clay_Raylib_Render(renderCommands);
+    // Clay_Raylib_Render(renderCommands);
     EndDrawing();
 //    printf("render time: %f ms\n", (GetTime() - currentTime) * 1000);
 
