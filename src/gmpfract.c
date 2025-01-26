@@ -8,7 +8,7 @@
 
 #define RAYLIB_VECTOR2_TO_CLAY_VECTOR2(vector) (Clay_Vector2) { .x = vector.x, .y = vector.y }
 
-#define N_THREADS 1
+#define N_THREADS 12
 
 const uint32_t FONT_ID_BODY_24 = 0;
 const uint32_t FONT_ID_BODY_16 = 1;
@@ -21,8 +21,8 @@ Clay_Dimensions prev_screen_dims = {0.0, 0.0};
 
 // todo settings/split this logic to another file
 uint32_t decimation_level;
-const uint32_t N_DECIMATIONS = 3;
-const float DECIMATION_FAC = 3.0;
+#define N_DECIMATIONS 5
+const float DECIMATION_FAC = 2.0;
 const float final_pixel_scale = 2.0;
 
 Image *fractal_image[N_DECIMATIONS];
@@ -39,9 +39,9 @@ ArbPrecFrame fractal_frame;
 void configure_renderer(void) {
     uint32_t prec = 1024; // bits
     uint32_t ref_iterations = 20000;
-    mpf_init_set_str(fractal_frame.c_re, "-1479946223325078880202580653442e-30", 10);
+    mpf_init_set_str(fractal_frame.c_re, "-147994622332507888020258065344200153e-35", 10);
     mpf_init_set_str(fractal_frame.c_im,  "0000901397329020353980197791866e-30", 10);
-    mpf_init_set_str(fractal_frame.zoom, "1e10", 10);
+    mpf_init_set_str(fractal_frame.zoom, "2e34", 10);
 
     printf("building reference iteration...\n");
     double currentTime = GetTime();
@@ -122,6 +122,45 @@ ScrollbarData scrollbarData = {};
 
 bool debugEnabled = false;
 
+void fractal_render_update(Clay_Dimensions *screen_dims) {
+    RendererState_t r_state = renderer_update(&renderer);
+    if(memcmp(screen_dims, &prev_screen_dims, sizeof(screen_dims))) {
+        prev_screen_dims = *screen_dims;
+        if(r_state == RENDERING) {
+            renderer_cancel(&renderer);
+        }
+        reset_decimation_level();
+        redraw_fractal_dec(screen_dims->width, screen_dims->height);
+    }
+
+    r_state = renderer_update(&renderer);
+    if(r_state == RENDERING) {
+        // update texture from image
+        update_texture_from_image();
+    } else {
+        // render finished, load texture one last time
+        if(r_state == FINISHED) {
+            update_texture_from_image();
+
+            renderer.state = IDLE;
+
+            // check if we still have to do the next decimation level
+            if(decimation_level > 0) {
+                decimation_level--;
+                redraw_fractal_dec(screen_dims->width, screen_dims->height);
+            }
+        }
+    }
+}
+
+void drawFractalTex(Clay_Dimensions *screen_dims) {
+    // draw images
+    for(int32_t dec = N_DECIMATIONS - 1; dec >= 0; dec--) {
+        if(IsTextureValid(fractal_tex[dec])) {
+            DrawTexturePro(fractal_tex[dec], (Rectangle) { 0.0, 0.0, fractal_tex[dec].width, fractal_tex[dec].height}, (Rectangle) { 0.0, 0.0, screen_dims->width, screen_dims->height}, (Vector2) { 0.0, 0.0 }, 0.0, WHITE);
+        }
+    }
+}
 
 void UpdateDrawFrame(void)
 {
@@ -139,8 +178,18 @@ void UpdateDrawFrame(void)
     Clay_SetPointerState(mousePosition, IsMouseButtonDown(0) && !scrollbarData.mouseDown);
     Clay_Dimensions screen_dims = (Clay_Dimensions) { (float)GetScreenWidth(), (float)GetScreenHeight() };
     Clay_SetLayoutDimensions(screen_dims);
+
+    // update fractal rendering (render next thing, update current texture, etc)
+    fractal_render_update(&screen_dims);
+
     if (!IsMouseButtonDown(0)) {
         scrollbarData.mouseDown = false;
+    }
+
+    if (IsKeyPressed(KEY_R)) {
+        renderer_cancel(&renderer);
+        reset_decimation_level();
+        redraw_fractal_dec(screen_dims.width, screen_dims.height);
     }
 
     if (IsMouseButtonDown(0) && !scrollbarData.mouseDown && Clay_PointerOver(Clay__HashString(CLAY_STRING("ScrollBar"), 0, 0))) {
@@ -173,44 +222,10 @@ void UpdateDrawFrame(void)
 //    currentTime = GetTime();
     BeginDrawing();
     ClearBackground(BLACK);
-
-    RendererState_t r_state = renderer_update(&renderer);
-    if(memcmp(&screen_dims, &prev_screen_dims, sizeof(screen_dims))) {
-        prev_screen_dims = screen_dims;
-        if(r_state == RENDERING) {
-            renderer_cancel(&renderer);
-        }
-        reset_decimation_level();
-        redraw_fractal_dec(screen_dims.width, screen_dims.height);
-    }
-
-     r_state = renderer_update(&renderer);
-    if(r_state == RENDERING) {
-        // update texture from image
-        update_texture_from_image();
-    } else {
-        // render finished, load texture one last time
-        if(r_state == FINISHED) {
-            update_texture_from_image();
-
-            renderer.state = IDLE;
-
-            // check if we still have to do the next decimation level
-            if(decimation_level > 0) {
-                decimation_level--;
-                redraw_fractal_dec(screen_dims.width, screen_dims.height);
-            }
-        }
-    }
-    
-    // draw image
-    for(int32_t dec = N_DECIMATIONS - 1; dec >= 0; dec--) {
-        if(IsTextureValid(fractal_tex[dec])) {
-            DrawTexturePro(fractal_tex[dec], (Rectangle) { 0.0, 0.0, fractal_tex[dec].width, fractal_tex[dec].height}, (Rectangle) { 0.0, 0.0, screen_dims.width, screen_dims.height}, (Vector2) { 0.0, 0.0 }, 0.0, WHITE);
-        }
-    }
+    // draw fractal first
+    drawFractalTex(&screen_dims);
     // draw UI on top
-    // Clay_Raylib_Render(renderCommands);
+    Clay_Raylib_Render(renderCommands);
     EndDrawing();
 //    printf("render time: %f ms\n", (GetTime() - currentTime) * 1000);
 

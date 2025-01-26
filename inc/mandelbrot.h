@@ -259,7 +259,7 @@ uint32_t perturb_mandelbrot(double x, double y, PerturbMandelbrotCFG *cfg) {
         double abs_dz2 = reDz * reDz + imDz * imDz;
 
         // apparently this is supposed to fix glitches, but it seems to just create them.
-        if(abs_z2 < abs_dz2 || ref_iteration >= cfg->reference->iterations) {
+        if(abs_z2 < abs_dz2 || ref_iteration >= cfg->reference->iterations - 1) { // minus one because we increment after this check
             // dz = z
             reDz = re_z; imDz = im_z;
             ref_iteration = 0;

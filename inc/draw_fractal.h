@@ -7,7 +7,7 @@
 typedef uint32_t (*Fractal)(double x, double y, void* cfg);
 
 Color colorMap(uint32_t iter) {
-    return ColorFromHSV((float) ((iter) % 360), 1., 1.);
+    return ColorFromHSV((float) ((iter * 5) % 360), 1., 1.);
 }
 
 void DrawFractal(Image *image, Fractal fractal, void* cfg) {
@@ -17,8 +17,8 @@ void DrawFractal(Image *image, Fractal fractal, void* cfg) {
     for(int32_t x = 0; x < width; ++x) {
         for(int32_t y = 0; y < height; ++y){
             // re/im range -2 to 2
-            double re = (float)(x - width / 2) * 4. / (float)width;
-            double im = (float)(y - height / 2) * 4. / (float)width;
+            double re = ((float) x - (float)width / 2) * 2. / (float)width;
+            double im = ((float) y - (float)height / 2) * 2. / (float)width;
             int iter = fractal(re, im, cfg);
             if(iter != UINT32_MAX) {
                 ImageDrawPixel(image, x, y, colorMap(iter));
@@ -61,8 +61,8 @@ void* render_thread(RenderThreadSync_t *sync) {
             // fractal drawing loop
             for(int32_t x = 0; x < width; ++x) {
                 // re/im range -2 to 2
-                double re = (float)(x - width / 2) * 4. / (float)width;
-                double im = (float)(row_idx - height / 2) * 4. / (float)width;
+                double re = ((float)x + 0.5 - (float)width / 2) * 4. / (float)width; // +0.5 centers pixel on coordinate
+                double im = ((float)row_idx + 0.5 - (float)height / 2) * 4. / (float)width; // to keep image from moving when resolution changes
                 int iter = sync->fractal(re, im, sync->fractal_cfg);
                 if(iter != UINT32_MAX) {
                     ImageDrawPixel(sync->image, x, row_idx, colorMap(iter));
