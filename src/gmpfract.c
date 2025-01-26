@@ -4,6 +4,7 @@
 #include "draw_fractal.h"
 #include "mandelbrot.h"
 #include "gmp.h"
+#include "pthread.h"
 
 #define RAYLIB_VECTOR2_TO_CLAY_VECTOR2(vector) (Clay_Vector2) { .x = vector.x, .y = vector.y }
 
@@ -14,15 +15,20 @@ const Clay_Color COLOR_RED = (Clay_Color) {168, 66, 28, 255};
 const Clay_Color COLOR_ORANGE = (Clay_Color) {225, 138, 50, 255};
 
 Texture2D fractal_tex;
+pthread_mutex_t fractal_tex_mtx;
+
+
 Image fractal_image;
 Clay_Dimensions prev_screen_dims = {0.0, 0.0};
-float fractal_pixel_scale = 1.0;
+float fractal_pixel_scale = 0.5;
 
 void resize_fractal_image(uint32_t width, uint32_t height) {
+    if(pthread_mutex_lock(&fractal_tex_mtx)) exit(2);
     if(IsImageValid(fractal_image)) {
         UnloadImage(fractal_image);
     }
     fractal_image = GenImageColor(width, height, BLACK);
+    pthread_mutex_unlock(&fractal_tex_mtx);
 }
 
 void makeTexture() {
@@ -50,15 +56,16 @@ void redraw_fractal(uint32_t width, uint32_t height) {
     // DrawFractal(&fractal_image, (Fractal*) &arb_prec_mandelbrot, (void*) &cfg);
 
     uint32_t prec = 1024; // bits
-    uint32_t ref_iterations = 40000;
+    uint32_t ref_iterations = 20000;
     ArbPrecFrame frame;
     mpf_init_set_str(frame.c_re, "-1479946223325078880202580653442e-30", 10);
     mpf_init_set_str(frame.c_im,  "0000901397329020353980197791866e-30", 10);
-    mpf_init_set_str(frame.zoom, "1e20", 10);
+    mpf_init_set_str(frame.zoom, "1e33", 10);
 
     printf("building reference iteration...\n");
     double currentTime = GetTime();
 
+    // TODO For some reason ref always has iterations set to 0 :/
     RefIter ref = build_ref_iter(&frame, prec, ref_iterations);
 
     printf("ref iter time: %f ms\n", (GetTime() - currentTime) * 1000);
@@ -68,11 +75,13 @@ void redraw_fractal(uint32_t width, uint32_t height) {
     printf("rendering...\n");
     currentTime = GetTime();
     PerturbMandelbrotCFG cfg = {
-        .iterations = 10000,
+        .iterations = 20000,
         .frame = &frame,
         .reference = &ref
     };
 
+    if(pthread_mutex_lock(&fractal_tex_mtx)) exit(2);
+    // DrawFractal_threaded(&fractal_image, (Fractal*) &perturb_mandelbrot, &cfg, 8);
     DrawFractal(&fractal_image, (Fractal*) &perturb_mandelbrot, &cfg);
 
     printf("render time: %f ms\n", (GetTime() - currentTime) * 1000);
@@ -80,6 +89,7 @@ void redraw_fractal(uint32_t width, uint32_t height) {
     drop_ref_iter(&ref);
     
     makeTexture();
+    pthread_mutex_unlock(&fractal_tex_mtx);
 }
 
 
@@ -199,6 +209,7 @@ int main(void) {
     Clay_SetMeasureTextFunction(Raylib_MeasureText, 0);
     Clay_Raylib_Initialize(1024, 768, "Clay - Raylib Renderer Example", FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT);
     
+    pthread_mutex_init(&fractal_tex_mtx, NULL);
     resize_fractal_image(1,1);
     makeTexture();
 

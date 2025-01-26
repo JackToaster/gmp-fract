@@ -19,7 +19,7 @@ BUILD_DIR=build
 TARGET=gmpfract
 
 INC=-I$(INC_DIR)
-LIB=-l:libraylib.so.550 -lgmp -lm
+LIB=-l:libraylib.so.550 -lgmp -lm -lpthread
 # check if source directory exists
 ifeq ($(wildcard $(SRC_DIR)),)
 $(error Source directory '$(SRC_DIR)' not found.)

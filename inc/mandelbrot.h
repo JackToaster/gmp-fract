@@ -194,9 +194,13 @@ RefIter build_ref_iter(ArbPrecFrame *frame, mp_bitcnt_t precision_bits, uint32_t
         re_pts[i] = mpf_get_d(re);
         im_pts[i] = mpf_get_d(im);
 
+        if(i < 20) {
+            printf("%i: %.4f%+.4fi\n", i, mpf_get_d(re), mpf_get_d(im));
+        }
+
         ++i;
 
-        if(mpf_get_d(re2) + mpf_get_d(im2) > 40.0) {
+        if(mpf_get_d(re2) + mpf_get_d(im2) > 4.0) {
             return (RefIter) {iter, re_pts, im_pts};
         }
     }
@@ -238,6 +242,9 @@ uint32_t perturb_mandelbrot(double x, double y, PerturbMandelbrotCFG *cfg) {
 
         ref_iteration++;
 
+        reRef = cfg->reference->re[ref_iteration];
+        imRef = cfg->reference->im[ref_iteration];
+
         double re_z = reRef + reDz;
         double im_z = imRef + imDz;
 
@@ -249,15 +256,15 @@ uint32_t perturb_mandelbrot(double x, double y, PerturbMandelbrotCFG *cfg) {
         double abs_dz2 = reDz * reDz + imDz * imDz;
 
         // apparently this is supposed to fix glitches, but it seems to just create them.
-        // if(abs_z2 < abs_dz2 || ref_iteration >= cfg->reference->iterations) {
-        //     // dz = z
-        //     reDz = re_z; imDz = im_z;
-        //     ref_iteration = 0;
-        // }
+        if(abs_z2 < abs_dz2 /*|| ref_iteration >= cfg->reference->iterations*/) {
+            // dz = z
+            reDz = re_z; imDz = im_z;
+            ref_iteration = 0;
+        }
 
         iteration++;
     }
-
+    
     return UINT32_MAX;
 }
 /*
