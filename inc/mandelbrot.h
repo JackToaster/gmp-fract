@@ -58,6 +58,7 @@ typedef struct ArbPrecMandelbrotCFG {
     mp_bitcnt_t precision_bits;
 } ArbPrecMandelbrotCFG;
 
+// This leaks memory like crazy by not clear-ing the mpf_t's. not used anyway so not going to fix.
 uint32_t arb_prec_mandelbrot(double x, double y, ArbPrecMandelbrotCFG *cfg) {
     uint32_t iter = 0;
 
@@ -136,8 +137,6 @@ RefIter build_ref_iter(ArbPrecFrame *frame, mp_bitcnt_t precision_bits, uint32_t
     double *re_pts = (double*) malloc(iterations * sizeof(double));
     double *im_pts = (double*) malloc(iterations * sizeof(double));
 
-    uint32_t iter = 0;
-
     // C value
     mpf_t re_c;
     mpf_t im_c;
@@ -198,12 +197,16 @@ RefIter build_ref_iter(ArbPrecFrame *frame, mp_bitcnt_t precision_bits, uint32_t
             printf("%i: %.4f%+.4fi\n", i, mpf_get_d(re), mpf_get_d(im));
         }
 
-        ++i;
-
-        if(mpf_get_d(re2) + mpf_get_d(im2) > 4.0) {
-            return (RefIter) {iter, re_pts, im_pts};
+        if(re_pts[i] + im_pts[i] > 4.0) {
+            printf("early exit from ref-iter\n");
+            break;
         }
+
+        ++i;
     }
+
+    // deallocate memory from arb-precision floats
+    mpf_clears(&re, &im, &re2, &im2, &re_c, &im_c, NULL);
 
     return (RefIter) {iterations, re_pts, im_pts};
 }
@@ -256,7 +259,7 @@ uint32_t perturb_mandelbrot(double x, double y, PerturbMandelbrotCFG *cfg) {
         double abs_dz2 = reDz * reDz + imDz * imDz;
 
         // apparently this is supposed to fix glitches, but it seems to just create them.
-        if(abs_z2 < abs_dz2 /*|| ref_iteration >= cfg->reference->iterations*/) {
+        if(abs_z2 < abs_dz2 || ref_iteration >= cfg->reference->iterations) {
             // dz = z
             reDz = re_z; imDz = im_z;
             ref_iteration = 0;

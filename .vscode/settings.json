@@ -11,6 +11,7 @@
         "*.inc": "c",
         "mandelbrot.h": "c",
         "gmp.h": "c",
-        "vector": "c"
+        "vector": "c",
+        "functional": "c"
     }
 }

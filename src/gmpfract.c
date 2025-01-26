@@ -8,88 +8,80 @@
 
 #define RAYLIB_VECTOR2_TO_CLAY_VECTOR2(vector) (Clay_Vector2) { .x = vector.x, .y = vector.y }
 
+#define N_THREADS 1
+
 const uint32_t FONT_ID_BODY_24 = 0;
 const uint32_t FONT_ID_BODY_16 = 1;
 const Clay_Color COLOR_LIGHT = (Clay_Color) {224, 215, 210, 55};
 const Clay_Color COLOR_RED = (Clay_Color) {168, 66, 28, 255};
 const Clay_Color COLOR_ORANGE = (Clay_Color) {225, 138, 50, 255};
 
-Texture2D fractal_tex;
-pthread_mutex_t fractal_tex_mtx;
 
-
-Image fractal_image;
 Clay_Dimensions prev_screen_dims = {0.0, 0.0};
-float fractal_pixel_scale = 0.5;
 
-void resize_fractal_image(uint32_t width, uint32_t height) {
-    if(pthread_mutex_lock(&fractal_tex_mtx)) exit(2);
-    if(IsImageValid(fractal_image)) {
-        UnloadImage(fractal_image);
-    }
-    fractal_image = GenImageColor(width, height, BLACK);
-    pthread_mutex_unlock(&fractal_tex_mtx);
-}
+// todo settings/split this logic to another file
+uint32_t decimation_level;
+const uint32_t N_DECIMATIONS = 3;
+const float DECIMATION_FAC = 3.0;
+const float final_pixel_scale = 2.0;
 
-void makeTexture() {
-    if(IsTextureValid(fractal_tex)) {
-        UnloadTexture(fractal_tex);
-    }
+Image *fractal_image[N_DECIMATIONS];
+Texture2D fractal_tex[N_DECIMATIONS];
 
-    fractal_tex = LoadTextureFromImage(fractal_image);
-}
 
-void redraw_fractal(uint32_t width, uint32_t height) {
-    
-    
-    resize_fractal_image(width, height);
 
-    // uint32_t prec = 256; // bits
-    // ArbPrecMandelbrotCFG cfg = {
-    //     .iterations=2000,
-    //     .precision_bits = prec
-    // };
-    // mpf_set_default_prec(prec);
-    // mpf_init_set_str(cfg.c_re, "-1479946223325078880202580653442e-30", 10);
-    // mpf_init_set_str(cfg.c_im,  "0000901397329020353980197791866e-30", 10);
-    // mpf_init_set_str(cfg.zoom, "1e20", 10);
-    // DrawFractal(&fractal_image, (Fractal*) &arb_prec_mandelbrot, (void*) &cfg);
+FractalRenderer_t renderer;
+PerturbMandelbrotCFG fractal_config;
+RefIter fractal_ref_iter;
+ArbPrecFrame fractal_frame;
 
+// set configurations and generate reference orbit
+void configure_renderer(void) {
     uint32_t prec = 1024; // bits
     uint32_t ref_iterations = 20000;
-    ArbPrecFrame frame;
-    mpf_init_set_str(frame.c_re, "-1479946223325078880202580653442e-30", 10);
-    mpf_init_set_str(frame.c_im,  "0000901397329020353980197791866e-30", 10);
-    mpf_init_set_str(frame.zoom, "1e33", 10);
+    mpf_init_set_str(fractal_frame.c_re, "-1479946223325078880202580653442e-30", 10);
+    mpf_init_set_str(fractal_frame.c_im,  "0000901397329020353980197791866e-30", 10);
+    mpf_init_set_str(fractal_frame.zoom, "1e10", 10);
 
     printf("building reference iteration...\n");
     double currentTime = GetTime();
 
     // TODO For some reason ref always has iterations set to 0 :/
-    RefIter ref = build_ref_iter(&frame, prec, ref_iterations);
+    fractal_ref_iter = build_ref_iter(&fractal_frame, prec, ref_iterations);
 
     printf("ref iter time: %f ms\n", (GetTime() - currentTime) * 1000);
 
-
-
-    printf("rendering...\n");
-    currentTime = GetTime();
-    PerturbMandelbrotCFG cfg = {
+    // set configuration
+    fractal_config = (PerturbMandelbrotCFG){
         .iterations = 20000,
-        .frame = &frame,
-        .reference = &ref
+        .frame = &fractal_frame,
+        .reference = &fractal_ref_iter
     };
+}
 
-    if(pthread_mutex_lock(&fractal_tex_mtx)) exit(2);
-    // DrawFractal_threaded(&fractal_image, (Fractal*) &perturb_mandelbrot, &cfg, 8);
-    DrawFractal(&fractal_image, (Fractal*) &perturb_mandelbrot, &cfg);
+void reset_decimation_level(void) {
+    decimation_level = N_DECIMATIONS - 1;
+    for(uint32_t i = 0; i < N_DECIMATIONS; ++i) {
+        if(fractal_image[i] != NULL && IsImageValid(*fractal_image[i])){
+            UnloadImage(*fractal_image[i]);
+        }
+        free(fractal_image[i]);
+        fractal_image[i] = NULL;
 
-    printf("render time: %f ms\n", (GetTime() - currentTime) * 1000);
-    
-    drop_ref_iter(&ref);
-    
-    makeTexture();
-    pthread_mutex_unlock(&fractal_tex_mtx);
+        if(IsTextureValid(fractal_tex[i])) {
+            UnloadTexture(fractal_tex[i]);
+        }
+    }
+}
+
+void update_texture_from_image(void) {
+    if(IsTextureValid(fractal_tex[decimation_level])) { UnloadTexture(fractal_tex[decimation_level]); }
+    fractal_tex[decimation_level] = LoadTextureFromImage(*fractal_image[decimation_level]);
+}
+void redraw_fractal_dec(uint32_t screen_width, uint32_t screen_height) {
+    float pixel_scale = final_pixel_scale / pow(DECIMATION_FAC, decimation_level);
+    renderer_startRender(&renderer, screen_width * pixel_scale, screen_height * pixel_scale);
+    fractal_image[decimation_level] = renderer_getResultImage(&renderer);
 }
 
 
@@ -107,7 +99,7 @@ Clay_RenderCommandArray CreateLayout() {
     CLAY(CLAY_ID("OuterContainer"), CLAY_LAYOUT({ .sizing = {CLAY_SIZING_GROW(0), CLAY_SIZING_GROW(0)}, .padding = CLAY_PADDING_ALL(16), .childGap = 16 })) {
         CLAY(CLAY_ID("SideBar"),
             CLAY_LAYOUT({ .layoutDirection = CLAY_TOP_TO_BOTTOM, .sizing = { .width = CLAY_SIZING_FIXED(300), .height = CLAY_SIZING_GROW(0) }, .padding = CLAY_PADDING_ALL(16), .childGap = 16 }),
-            CLAY_RECTANGLE({ .color = COLOR_LIGHT, .cornerRadius = 5 })
+            CLAY_RECTANGLE({ .color = COLOR_LIGHT, .cornerRadius = {5} })
         ) {
 
             // Standard C code like loops etc work inside components
@@ -129,6 +121,7 @@ typedef struct
 ScrollbarData scrollbarData = {};
 
 bool debugEnabled = false;
+
 
 void UpdateDrawFrame(void)
 {
@@ -180,12 +173,42 @@ void UpdateDrawFrame(void)
 //    currentTime = GetTime();
     BeginDrawing();
     ClearBackground(BLACK);
-    // draw image
+
+    RendererState_t r_state = renderer_update(&renderer);
     if(memcmp(&screen_dims, &prev_screen_dims, sizeof(screen_dims))) {
         prev_screen_dims = screen_dims;
-        redraw_fractal(screen_dims.width * fractal_pixel_scale, screen_dims.height * fractal_pixel_scale);
+        if(r_state == RENDERING) {
+            renderer_cancel(&renderer);
+        }
+        reset_decimation_level();
+        redraw_fractal_dec(screen_dims.width, screen_dims.height);
     }
-    DrawTexturePro(fractal_tex, (Rectangle) { 0.0, 0.0, fractal_tex.width, fractal_tex.height}, (Rectangle) { 0.0, 0.0, screen_dims.width, screen_dims.height}, (Vector2) { 0.0, 0.0 }, 0.0, WHITE);
+
+     r_state = renderer_update(&renderer);
+    if(r_state == RENDERING) {
+        // update texture from image
+        update_texture_from_image();
+    } else {
+        // render finished, load texture one last time
+        if(r_state == FINISHED) {
+            update_texture_from_image();
+
+            renderer.state = IDLE;
+
+            // check if we still have to do the next decimation level
+            if(decimation_level > 0) {
+                decimation_level--;
+                redraw_fractal_dec(screen_dims.width, screen_dims.height);
+            }
+        }
+    }
+    
+    // draw image
+    for(int32_t dec = N_DECIMATIONS - 1; dec >= 0; dec--) {
+        if(IsTextureValid(fractal_tex[dec])) {
+            DrawTexturePro(fractal_tex[dec], (Rectangle) { 0.0, 0.0, fractal_tex[dec].width, fractal_tex[dec].height}, (Rectangle) { 0.0, 0.0, screen_dims.width, screen_dims.height}, (Vector2) { 0.0, 0.0 }, 0.0, WHITE);
+        }
+    }
     // draw UI on top
     // Clay_Raylib_Render(renderCommands);
     EndDrawing();
@@ -209,10 +232,9 @@ int main(void) {
     Clay_SetMeasureTextFunction(Raylib_MeasureText, 0);
     Clay_Raylib_Initialize(1024, 768, "Clay - Raylib Renderer Example", FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT);
     
-    pthread_mutex_init(&fractal_tex_mtx, NULL);
-    resize_fractal_image(1,1);
-    makeTexture();
-
+    configure_renderer();
+    renderer_init(&renderer, (Fractal) &perturb_mandelbrot, (void*)&fractal_config, N_THREADS);
+    reset_decimation_level();
 
     Raylib_fonts[FONT_ID_BODY_24] = (Raylib_Font) {
         .font = LoadFontEx("resources/Roboto-Regular.ttf", 48, 0, 400),

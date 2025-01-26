@@ -1,7 +1,7 @@
 CC=clang
 
 FLAGS=-Wall -MP -MD
-DEBUG_FLAGS=$(FLAGS) -O1 -g
+DEBUG_FLAGS=$(FLAGS) -O1 -g -fsanitize=address -fno-omit-frame-pointer
 RELEASE_FLAGS=$(FLAGS) -O3 
 
 
