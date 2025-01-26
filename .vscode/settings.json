@@ -1,0 +1,15 @@
+{
+    "files.associations": {
+        "raylib.h": "c",
+        "clay.h": "c",
+        "stdint.h": "c",
+        "*.tcc": "c",
+        "charconv": "c",
+        "compare": "c",
+        "format": "c",
+        "ostream": "c",
+        "*.inc": "c",
+        "mandelbrot.h": "c",
+        "gmp.h": "c"
+    }
+}

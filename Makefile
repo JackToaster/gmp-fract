@@ -1,21 +1,25 @@
-CC=tcc -Wunsupported
+CC=clang
 
-DEBUG_FLAGS=-Wall -g -b
-RELEASE_FLAGS=-Wall -Wpedantic -O3 
+FLAGS=-Wall -MP -MD
+DEBUG_FLAGS=$(FLAGS) -O1 -g
+RELEASE_FLAGS=$(FLAGS) -O3 
+
 
 DBG ?= 1
 ifeq ($(DBG), 1)
 CFLAGS = $(DEBUG_FLAGS)
 $(info Debug enabled)
 else
-CC=gcc
 CFLAGS = $(RELEASE_FLAGS)
 endif
 
 SRC_DIR=src
+INC_DIR=inc
 BUILD_DIR=build
 TARGET=gmpfract
 
+INC=-I$(INC_DIR)
+LIB=-l:libraylib.so.550 -lgmp -lm
 # check if source directory exists
 ifeq ($(wildcard $(SRC_DIR)),)
 $(error Source directory '$(SRC_DIR)' not found.)
@@ -33,19 +37,19 @@ DEP_FILES := $(OBJ_FILES:.o=.d)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	mkdir -p $(BUILD_DIR)
-	$(CC) -c -o $@ $< $(CFLAGS)
-
--include $(DEP_FILES)
+	$(CC) $(INC) -c -o $@ $< $(CFLAGS)
 
 
 all: $(TARGET)
+
+-include $(DEP_FILES)
 
 run: $(TARGET)
 	$(info ------------------------------------------)
 	./$(TARGET)
 
 $(TARGET): $(OBJ_FILES)
-	$(CC) -o $@$(BIN_EXT) $^ $(CFLAGS)
+	$(CC)  $(INC) -o $@$(BIN_EXT) $^ $(CFLAGS) $(LIB) 
 
 .PHONY: clean
 
